@@ -1,0 +1,30 @@
+# SearXNG settings for Validly autonomous agent
+# https://docs.searxng.org/admin/settings/settings.html
+use_default_settings: true
+
+general:
+  debug: false
+  instance_name: "Validly Search"
+
+server:
+  # Overridden at runtime by the SEARXNG_SECRET_KEY environment variable (set in .env)
+  secret_key: "change-me-via-SEARXNG_SECRET_KEY-env-var"
+  # Rate limiting is disabled because SearXNG is on an internal Docker network only
+  # and is not reachable from outside the host.
+  limiter: false
+  image_proxy: false
+  bind_address: "0.0.0.0:8080"
+  method: "POST"
+
+search:
+  safe_search: 0
+  autocomplete: ""
+  default_lang: "en"
+  # Enable the JSON format so the crawler can query /search?format=json
+  formats:
+    - html
+    - json
+
+ui:
+  static_use_hash: true
+  default_theme: simple

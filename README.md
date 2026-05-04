@@ -256,6 +256,21 @@ docker compose logs -f digest    # watch the digest agent
 docker compose ps                # check service status
 ```
 
+### Stopping and cleaning up
+
+```bash
+# Stop all services
+docker compose down
+
+# Stop services and remove volumes (wipes the database)
+docker compose down -v
+
+# Full teardown — stop, remove volumes, and delete the project directory
+docker compose down -v && cd .. && rm -rf validly
+```
+
+> **Note:** Removing just the project directory without `docker compose down -v` first will leave Docker containers, volumes, networks, and images behind. Always run `docker compose down` before deleting the folder.
+
 ### Setting up Telegram notifications
 
 1. Open Telegram and search for **@BotFather**
