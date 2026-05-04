@@ -39,6 +39,8 @@ POSTGRES_URL: str = os.environ.get(
 OLLAMA_URL: str = os.environ.get("OLLAMA_URL", "http://ollama:11434")
 OLLAMA_MODEL: str = os.environ.get("OLLAMA_MODEL", "qwen2.5:14b")
 DISCORD_WEBHOOK_URL: str = os.environ.get("DISCORD_WEBHOOK_URL", "")
+TELEGRAM_BOT_TOKEN: str = os.environ.get("TELEGRAM_BOT_TOKEN", "")
+TELEGRAM_CHAT_ID: str = os.environ.get("TELEGRAM_CHAT_ID", "")
 DIGEST_HOUR: int = int(os.environ.get("DIGEST_HOUR", "8"))
 SCORE_THRESHOLD: float = 5.0
 
@@ -293,7 +295,7 @@ def build_discord_payload(idea: dict[str, Any], why_now: str) -> dict[str, Any]:
 async def send_discord(client: httpx.AsyncClient, payload: dict) -> bool:
     """POST the payload to the Discord webhook. Returns True on success."""
     if not DISCORD_WEBHOOK_URL or DISCORD_WEBHOOK_URL.startswith("https://discord.com/api/webhooks/your"):
-        log.warning("DISCORD_WEBHOOK_URL not configured, skipping send")
+        log.warning("DISCORD_WEBHOOK_URL not configured, skipping Discord send")
         return False
 
     try:
@@ -309,6 +311,89 @@ async def send_discord(client: httpx.AsyncClient, payload: dict) -> bool:
         return False
     except Exception as exc:  # noqa: BLE001
         log.error("Discord send failed: %s", exc)
+        return False
+
+
+def build_telegram_text(idea: dict[str, Any], why_now: str) -> str:
+    """Build a Telegram HTML-formatted message for the daily digest."""
+    sources: list[dict] = []
+    try:
+        sources = json.loads(idea["sources"]) if isinstance(idea["sources"], str) else (idea["sources"] or [])
+    except (json.JSONDecodeError, TypeError):
+        pass
+
+    competitors: list[str] = []
+    try:
+        competitors = json.loads(idea["competitors"]) if isinstance(idea["competitors"], str) else (idea["competitors"] or [])
+    except (json.JSONDecodeError, TypeError):
+        pass
+
+    score_bar = "█" * int(idea["score"]) + "░" * (10 - int(idea["score"]))
+    urgency_bar = "█" * int(idea["urgency"]) + "░" * (10 - int(idea["urgency"]))
+
+    lines: list[str] = [
+        f"🚀 <b>Today's Top SaaS Opportunity</b>",
+        f"",
+        f"<b>{idea['name']}</b>",
+        f"",
+        f"📋 <b>Problem</b>",
+        f"{idea['problem'][:800]}",
+        f"",
+        f"💡 <b>Opportunity</b>",
+        f"{idea['opportunity'][:800]}",
+        f"",
+        f"📊 <b>Scores</b>",
+        f"Market:  <code>{score_bar}</code> {idea['score']:.1f}/10",
+        f"Urgency: <code>{urgency_bar}</code> {idea['urgency']:.1f}/10",
+        f"",
+        f"⏰ <b>Why Now</b>",
+        f"{why_now[:800]}",
+    ]
+
+    if competitors:
+        lines += ["", f"🏆 <b>Competitors</b>", ", ".join(competitors[:8])]
+
+    if sources:
+        source_lines = [
+            f'• <a href="{s["url"]}">{s.get("title", "Source")[:60]}</a>'
+            for s in sources[:5]
+            if s.get("url")
+        ]
+        if source_lines:
+            lines += ["", "🔗 <b>Sources</b>"] + source_lines
+
+    lines += [
+        "",
+        f"📈 Seen <b>{idea['times_seen']}</b> time(s) · Verdict: <b>{idea['verdict']}</b>",
+        f"<i>Validly Autonomous Agent · {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M UTC')}</i>",
+    ]
+
+    return "\n".join(lines)
+
+
+async def send_telegram(client: httpx.AsyncClient, text: str) -> bool:
+    """Send a message via Telegram Bot API. Returns True on success."""
+    if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
+        log.warning("TELEGRAM_BOT_TOKEN or TELEGRAM_CHAT_ID not configured, skipping Telegram send")
+        return False
+
+    url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
+    payload = {
+        "chat_id": TELEGRAM_CHAT_ID,
+        "text": text[:4096],
+        "parse_mode": "HTML",
+        "disable_web_page_preview": True,
+    }
+
+    try:
+        resp = await client.post(url, json=payload, timeout=30.0)
+        if resp.status_code == 200:
+            log.info("Telegram message sent successfully")
+            return True
+        log.error("Telegram API returned %d: %s", resp.status_code, resp.text[:200])
+        return False
+    except Exception as exc:  # noqa: BLE001
+        log.error("Telegram send failed: %s", exc)
         return False
 
 
@@ -355,15 +440,22 @@ async def run_digest(pool: asyncpg.Pool, client: httpx.AsyncClient) -> None:
     why_now = await generate_why_now(client, best)
     log.info("Generated why-now reasoning")
 
-    payload = build_discord_payload(best, why_now)
-    sent = await send_discord(client, payload)
+    discord_payload = build_discord_payload(best, why_now)
+    telegram_text = build_telegram_text(best, why_now)
+
+    discord_sent = await send_discord(client, discord_payload)
+    telegram_sent = await send_telegram(client, telegram_text)
+    sent = discord_sent or telegram_sent
 
     if sent:
         await mark_sent(pool, best["id"])
-        actions.append({"action": "sent_discord", "idea_id": best["id"]})
         log.info("Marked idea id=%d as sent", best["id"])
-    else:
-        actions.append({"action": "discord_skipped_or_failed", "idea_id": best["id"]})
+    if discord_sent:
+        actions.append({"action": "sent_discord", "idea_id": best["id"]})
+    if telegram_sent:
+        actions.append({"action": "sent_telegram", "idea_id": best["id"]})
+    if not sent:
+        actions.append({"action": "all_notifications_skipped_or_failed", "idea_id": best["id"]})
 
     await log_digest_run(pool, actions)
     log.info("Digest cycle complete")

@@ -195,12 +195,29 @@ Validly ships with a fully autonomous, 24/7 SaaS opportunity hunting system that
 | **ollama** | Local AI (runs `OLLAMA_MODEL` from `.env`) |
 | **searxng** | Self-hosted web search (no API key required) |
 | **crawler** | Python agent — continuous scrape → reason → store loop |
-| **digest** | Python cron — fires daily at `DIGEST_HOUR`, picks best idea, sends to Discord |
+| **digest** | Python cron — fires daily at `DIGEST_HOUR`, picks best idea, sends to Telegram / Discord |
 | **nextjs** | The existing Validly app (only public-facing service) |
 
-### 1. Set up the `.env` file
+> **No external API keys are needed for autonomous mode.** All AI reasoning runs locally via Ollama.
 
-Copy the example and fill in your values:
+### ⚡ Quick start (recommended)
+
+```bash
+./setup.sh
+```
+
+The interactive script will:
+1. Guide you through creating a Telegram bot (~60 seconds)
+2. Auto-detect your chat ID
+3. Send a test message to confirm everything works
+4. Write your `.env` configuration file
+5. Start the full stack with `docker compose up -d`
+
+---
+
+### Manual setup
+
+#### 1. Copy and edit the environment file
 
 ```bash
 cp .env.example .env
@@ -212,35 +229,60 @@ Key variables to configure:
 # Local AI model (pulled automatically on first start)
 OLLAMA_MODEL=qwen2.5:14b
 
-# Discord webhook for the daily idea digest
+# Telegram bot for the daily idea digest (recommended)
+TELEGRAM_BOT_TOKEN=123456789:ABCdef...
+TELEGRAM_CHAT_ID=123456789
+
+# Discord webhook (optional alternative)
 DISCORD_WEBHOOK_URL=https://discord.com/api/webhooks/YOUR_ID/YOUR_TOKEN
 
 # What hour (UTC, 0-23) to fire the digest
 DIGEST_HOUR=8
-
-# Seconds between crawl cycles
-CRAWL_DELAY_SECONDS=120
 ```
 
-The existing Next.js variables (`DECODO_API_KEY`, `INSFORGE_API_KEY`, etc.) stay in `.env.local` as before — the Docker Compose setup reads `.env.local` for the `nextjs` service.
+The existing Next.js variables (`DECODO_API_KEY`, `INSFORGE_API_KEY`, etc.) go in `.env.local` — they are only needed for the manual analysis feature in the web UI.
 
-### 2. Run with Docker Compose
-
-```bash
-docker compose up
-```
-
-That's it. All services start automatically. Ollama will pull the model on first boot (this can take a few minutes depending on the model size). The crawler begins scraping once all services are healthy.
-
-To run in the background:
+#### 2. Run with Docker Compose
 
 ```bash
 docker compose up -d
-docker compose logs -f crawler   # watch the crawler
-docker compose logs -f digest    # watch the digest agent
 ```
 
-### 3. Add subreddits manually
+That's it. All services start automatically. Ollama pulls the model on first boot (may take a few minutes). The crawler starts scraping once all services are healthy.
+
+```bash
+docker compose logs -f crawler   # watch the crawler
+docker compose logs -f digest    # watch the digest agent
+docker compose ps                # check service status
+```
+
+### Setting up Telegram notifications
+
+1. Open Telegram and search for **@BotFather**
+2. Send `/newbot` and follow the prompts to create a bot
+3. Copy the **bot token** (looks like `123456789:ABCdef…`)
+4. Send any message to your new bot
+5. Visit `https://api.telegram.org/bot<TOKEN>/getUpdates` — find `"chat":{"id":…}` — that's your chat ID
+6. Add both values to `.env`:
+   ```
+   TELEGRAM_BOT_TOKEN=123456789:ABCdef...
+   TELEGRAM_CHAT_ID=123456789
+   ```
+
+Every day at `DIGEST_HOUR` UTC the digest agent posts the top-scored SaaS idea with its problem, opportunity, scores, competitors, and a "why now" reasoning.
+
+### Setting up Discord notifications (optional)
+
+1. Open your Discord server → **Server Settings → Integrations → Webhooks**
+2. Click **New Webhook**, choose the target channel, copy the **Webhook URL**
+3. Add it to `.env`:
+   ```
+   DISCORD_WEBHOOK_URL=https://discord.com/api/webhooks/YOUR_ID/YOUR_TOKEN
+   ```
+
+> You can configure both Telegram and Discord — the digest agent will send to whichever are configured.
+
+### Add subreddits manually
 
 Connect to Postgres and insert into `subreddit_queue`:
 
@@ -255,7 +297,7 @@ VALUES ('YourSubreddit', 8.0, 'human');
 
 Higher `priority` values are visited sooner. The crawler also automatically discovers and enqueues subreddits mentioned in posts.
 
-### 4. View the ideas database
+### View the ideas database
 
 ```bash
 # Open psql
@@ -272,15 +314,6 @@ SELECT name, score, verdict FROM ideas
 WHERE  sent_at IS NULL AND score >= 7
 ORDER  BY score DESC;
 ```
-
-### 5. Set up the Discord webhook
-
-1. Open your Discord server → **Server Settings → Integrations → Webhooks**
-2. Click **New Webhook**, give it a name (e.g. "Validly Digest"), choose the target channel
-3. Copy the **Webhook URL**
-4. Paste it as `DISCORD_WEBHOOK_URL` in your `.env`
-
-Every day at `DIGEST_HOUR` UTC the digest agent will post a rich embed to that channel with the top-scored idea, its problem, opportunity, competitors, sources, and a 3-sentence "why now" reasoning.
 
 ---
 
