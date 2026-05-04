@@ -183,6 +183,107 @@ npm run start    # Start production server
 npm run lint     # Run ESLint
 ```
 
+## 🤖 Autonomous Agent
+
+Validly ships with a fully autonomous, 24/7 SaaS opportunity hunting system that runs alongside the Next.js app via Docker Compose.
+
+### Architecture
+
+| Service | Role |
+|---------|------|
+| **postgres** | Postgres 16 + pgvector — stores ideas, embeddings, queue, logs |
+| **ollama** | Local AI (runs `OLLAMA_MODEL` from `.env`) |
+| **searxng** | Self-hosted web search (no API key required) |
+| **crawler** | Python agent — continuous scrape → reason → store loop |
+| **digest** | Python cron — fires daily at `DIGEST_HOUR`, picks best idea, sends to Discord |
+| **nextjs** | The existing Validly app (only public-facing service) |
+
+### 1. Set up the `.env` file
+
+Copy the example and fill in your values:
+
+```bash
+cp .env.example .env
+```
+
+Key variables to configure:
+
+```bash
+# Local AI model (pulled automatically on first start)
+OLLAMA_MODEL=qwen2.5:14b
+
+# Discord webhook for the daily idea digest
+DISCORD_WEBHOOK_URL=https://discord.com/api/webhooks/YOUR_ID/YOUR_TOKEN
+
+# What hour (UTC, 0-23) to fire the digest
+DIGEST_HOUR=8
+
+# Seconds between crawl cycles
+CRAWL_DELAY_SECONDS=120
+```
+
+The existing Next.js variables (`DECODO_API_KEY`, `INSFORGE_API_KEY`, etc.) stay in `.env.local` as before — the Docker Compose setup reads `.env.local` for the `nextjs` service.
+
+### 2. Run with Docker Compose
+
+```bash
+docker compose up
+```
+
+That's it. All services start automatically. Ollama will pull the model on first boot (this can take a few minutes depending on the model size). The crawler begins scraping once all services are healthy.
+
+To run in the background:
+
+```bash
+docker compose up -d
+docker compose logs -f crawler   # watch the crawler
+docker compose logs -f digest    # watch the digest agent
+```
+
+### 3. Add subreddits manually
+
+Connect to Postgres and insert into `subreddit_queue`:
+
+```bash
+docker compose exec postgres psql -U agent -d validly
+```
+
+```sql
+INSERT INTO subreddit_queue (subreddit, priority, added_by)
+VALUES ('YourSubreddit', 8.0, 'human');
+```
+
+Higher `priority` values are visited sooner. The crawler also automatically discovers and enqueues subreddits mentioned in posts.
+
+### 4. View the ideas database
+
+```bash
+# Open psql
+docker compose exec postgres psql -U agent -d validly
+
+# Top 10 ideas by score
+SELECT id, name, score, urgency, verdict, times_seen, sent_at
+FROM   ideas
+ORDER  BY score DESC
+LIMIT  10;
+
+# All unsent high-score ideas
+SELECT name, score, verdict FROM ideas
+WHERE  sent_at IS NULL AND score >= 7
+ORDER  BY score DESC;
+```
+
+### 5. Set up the Discord webhook
+
+1. Open your Discord server → **Server Settings → Integrations → Webhooks**
+2. Click **New Webhook**, give it a name (e.g. "Validly Digest"), choose the target channel
+3. Copy the **Webhook URL**
+4. Paste it as `DISCORD_WEBHOOK_URL` in your `.env`
+
+Every day at `DIGEST_HOUR` UTC the digest agent will post a rich embed to that channel with the top-scored idea, its problem, opportunity, competitors, sources, and a 3-sentence "why now" reasoning.
+
+---
+
 ## 🤝 Contributing
 
 Contributions are welcome! Please feel free to submit a Pull Request.
