@@ -7,8 +7,10 @@ general:
   instance_name: "Validly Search"
 
 server:
-  secret_key: "autonomous-agent-secret-key-change-me"
-  # Allow internal services (crawler) to use SearXNG without rate limits
+  # Overridden at runtime by the SEARXNG_SECRET_KEY environment variable (set in .env)
+  secret_key: "change-me-via-SEARXNG_SECRET_KEY-env-var"
+  # Rate limiting is disabled because SearXNG is on an internal Docker network only
+  # and is not reachable from outside the host.
   limiter: false
   image_proxy: false
   bind_address: "0.0.0.0:8080"

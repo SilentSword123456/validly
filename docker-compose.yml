@@ -51,7 +51,7 @@ services:
     networks:
       - backend
     environment:
-      - SEARXNG_SECRET_KEY=autonomous-agent-secret-key-change-me
+      - SEARXNG_SECRET_KEY=${SEARXNG_SECRET_KEY:-autonomous-agent-secret-key-change-me}
       - SEARXNG_BIND_ADDRESS=0.0.0.0:8080
     volumes:
       - ./searxng:/etc/searxng
