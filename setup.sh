@@ -210,6 +210,11 @@ if [[ "$jump_to_start" != "true" ]]; then
     prompt "Daily digest hour in UTC (0–23) [8]:"
     read -r DIGEST_HOUR_INPUT
     DIGEST_HOUR="${DIGEST_HOUR_INPUT:-8}"
+    # Validate that DIGEST_HOUR is a number between 0 and 23
+    if ! [[ "$DIGEST_HOUR" =~ ^[0-9]+$ ]] || (( DIGEST_HOUR < 0 || DIGEST_HOUR > 23 )); then
+        warn "Invalid hour '$DIGEST_HOUR' — defaulting to 8."
+        DIGEST_HOUR=8
+    fi
 
     # ---------------------------------------------------------------
     # Write .env
@@ -286,6 +291,7 @@ if [[ ! "$START_NOW" =~ ^[Nn]$ ]]; then
     echo "    docker compose logs -f digest    # watch the digest agent"
     echo "    docker compose ps                # check service status"
     echo "    docker compose down              # stop everything"
+    echo "    docker compose down -v           # stop everything and remove volumes"
     echo ""
     echo "  Web UI:  http://localhost:3000"
     echo ""

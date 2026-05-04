@@ -54,7 +54,7 @@ services:
       - SEARXNG_SECRET_KEY=autonomous-agent-secret-key-change-me
       - SEARXNG_BIND_ADDRESS=0.0.0.0:8080
     volumes:
-      - searxng_data:/etc/searxng
+      - ./searxng:/etc/searxng
     healthcheck:
       test: ["CMD-SHELL", "curl -sf http://localhost:8080/healthz || curl -sf http://localhost:8080/ || exit 1"]
       interval: 15s
@@ -161,6 +161,4 @@ volumes:
   postgres_data:
     driver: local
   ollama_data:
-    driver: local
-  searxng_data:
     driver: local
