@@ -875,28 +875,28 @@ async def main() -> None:
         context_actions: list[dict] = []
         context_tokens: list[int] = [0]
         run_id = await log_run_start(pool)
-        last_preseason_date: datetime | None = None
+        last_prereason_date: datetime | None = None
 
         while True:
             try:
                 now = datetime.now(timezone.utc)
 
                 # --- Pre-reason candidates 1 h before DIGEST_HOUR ---
-                preseason_target = now.replace(
+                prereason_target = now.replace(
                     hour=DIGEST_HOUR - 1 if DIGEST_HOUR > 0 else 23,
                     minute=0,
                     second=0,
                     microsecond=0,
                 )
                 if (
-                    now >= preseason_target
+                    now >= prereason_target
                     and (
-                        last_preseason_date is None
-                        or last_preseason_date.date() < now.date()
+                        last_prereason_date is None
+                        or last_prereason_date.date() < now.date()
                     )
                 ):
                     await pre_reason_top_candidates(pool, client)
-                    last_preseason_date = now
+                    last_prereason_date = now
 
                 # --- Context window management ---
                 if context_tokens[0] > CONTEXT_TOKEN_BUDGET:
