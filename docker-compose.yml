@@ -1,0 +1,159 @@
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: agent
+      POSTGRES_PASSWORD: agent
+      POSTGRES_DB: validly
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./db/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    networks:
+      - internal
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U agent -d validly"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  ollama:
+    image: ollama/ollama:latest
+    restart: unless-stopped
+    volumes:
+      - ollama_data:/root/.ollama
+    networks:
+      - internal
+    environment:
+      - OLLAMA_KEEP_ALIVE=24h
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:11434/api/tags || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+      start_period: 60s
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        ollama serve &
+        SERVE_PID=$$!
+        echo "Waiting for Ollama to start..."
+        until curl -sf http://localhost:11434/api/tags > /dev/null 2>&1; do sleep 2; done
+        echo "Pulling model ${OLLAMA_MODEL:-qwen2.5:14b}..."
+        ollama pull ${OLLAMA_MODEL:-qwen2.5:14b}
+        echo "Model ready."
+        wait $$SERVE_PID
+
+  searxng:
+    image: searxng/searxng:latest
+    restart: unless-stopped
+    networks:
+      - internal
+    environment:
+      - SEARXNG_SECRET_KEY=autonomous-agent-secret-key-change-me
+      - SEARXNG_BIND_ADDRESS=0.0.0.0:8080
+    volumes:
+      - searxng_data:/etc/searxng
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8080/healthz || curl -sf http://localhost:8080/ || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 20s
+
+  crawler:
+    build:
+      context: ./crawler
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      ollama:
+        condition: service_healthy
+      searxng:
+        condition: service_healthy
+    env_file:
+      - .env
+    networks:
+      - internal
+    environment:
+      - POSTGRES_URL=${POSTGRES_URL:-postgresql://agent:agent@postgres:5432/validly}
+      - OLLAMA_URL=${OLLAMA_URL:-http://ollama:11434}
+      - OLLAMA_MODEL=${OLLAMA_MODEL:-qwen2.5:14b}
+      - SEARXNG_URL=${SEARXNG_URL:-http://searxng:8080}
+      - CRAWL_DELAY_SECONDS=${CRAWL_DELAY_SECONDS:-120}
+      - SUBREDDIT_STALENESS_DAYS=${SUBREDDIT_STALENESS_DAYS:-3}
+      - MAX_IDEAS_IN_DB=${MAX_IDEAS_IN_DB:-500}
+      - DIGEST_HOUR=${DIGEST_HOUR:-8}
+    healthcheck:
+      test: ["CMD-SHELL", "pgrep -f 'python main.py' || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  digest:
+    build:
+      context: ./digest
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      ollama:
+        condition: service_healthy
+    env_file:
+      - .env
+    networks:
+      - internal
+    environment:
+      - POSTGRES_URL=${POSTGRES_URL:-postgresql://agent:agent@postgres:5432/validly}
+      - OLLAMA_URL=${OLLAMA_URL:-http://ollama:11434}
+      - OLLAMA_MODEL=${OLLAMA_MODEL:-qwen2.5:14b}
+      - DISCORD_WEBHOOK_URL=${DISCORD_WEBHOOK_URL}
+      - DIGEST_HOUR=${DIGEST_HOUR:-8}
+    healthcheck:
+      test: ["CMD-SHELL", "pgrep -f 'python main.py' || pgrep -f 'crond' || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+  nextjs:
+    build:
+      context: .
+      dockerfile: Dockerfile.nextjs
+    restart: unless-stopped
+    ports:
+      - "${NEXTJS_PORT:-3000}:3000"
+    env_file:
+      - .env.local
+    networks:
+      - internal
+      - public
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:3000/ || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+
+networks:
+  internal:
+    driver: bridge
+    internal: false
+  public:
+    driver: bridge
+
+volumes:
+  postgres_data:
+    driver: local
+  ollama_data:
+    driver: local
+  searxng_data:
+    driver: local
