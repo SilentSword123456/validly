@@ -59,8 +59,9 @@ echo "  ────────────────────────
 echo ""
 echo "  This script will:"
 echo "    1. Help you create a Telegram bot for daily digests"
-echo "    2. Create your .env configuration file"
-echo "    3. (Optional) Start the stack with Docker Compose"
+echo "    2. Optionally configure a Decodo residential proxy"
+echo "    3. Create your .env configuration file"
+echo "    4. (Optional) Start the stack with Docker Compose"
 echo ""
 echo "  No external API keys are required for autonomous mode."
 echo "  All AI runs locally via Ollama."
@@ -96,11 +97,13 @@ fi
 # ---------------------------------------------------------------
 TELEGRAM_BOT_TOKEN=""
 TELEGRAM_CHAT_ID=""
+DISCORD_WEBHOOK_URL=""
+DECODO_API_KEY=""
 
 if [[ "$jump_to_start" != "true" ]]; then
 
     echo ""
-    echo -e "${BOLD}─── Step 1 of 3: Telegram Bot ────────────────────────────${NC}"
+    echo -e "${BOLD}─── Step 1 of 4: Telegram Bot ────────────────────────────${NC}"
     echo ""
     echo "  A Telegram bot sends you the daily best SaaS idea."
     echo "  It only takes ~60 seconds to create one."
@@ -178,7 +181,7 @@ if [[ "$jump_to_start" != "true" ]]; then
     # Step 3 — Discord webhook (optional)
     # ---------------------------------------------------------------
     echo ""
-    echo -e "${BOLD}─── Step 2 of 3: Discord Webhook (optional) ──────────────${NC}"
+    echo -e "${BOLD}─── Step 2 of 4: Discord Webhook (optional) ──────────────${NC}"
     echo ""
     echo "  You can also send digests to a Discord channel."
     echo "  Skip this if you're using Telegram."
@@ -188,10 +191,47 @@ if [[ "$jump_to_start" != "true" ]]; then
     DISCORD_WEBHOOK_URL="${DISCORD_WEBHOOK_URL// /}"
 
     # ---------------------------------------------------------------
-    # Step 4 — Ollama model
+    # Step 3 of 4 — Decodo residential proxy (optional)
     # ---------------------------------------------------------------
     echo ""
-    echo -e "${BOLD}─── Step 3 of 3: AI Model ─────────────────────────────────${NC}"
+    echo -e "${BOLD}─── Step 3 of 4: Decodo Residential Proxy (optional) ─────${NC}"
+    echo ""
+    echo "  Decodo routes crawler requests through residential IPs so"
+    echo "  Reddit and other sites don't block your server."
+    echo "  Sign up (free trial available) at https://decodo.com"
+    echo ""
+    echo "  Paste your key in  user:password  format"
+    echo "  e.g.  spuser1abc123:MySecret456"
+    echo ""
+    prompt "Decodo API key (user:password) — or press Enter to skip:"
+    read -r DECODO_API_KEY_INPUT
+    DECODO_API_KEY="${DECODO_API_KEY_INPUT// /}"   # strip spaces
+
+    if [[ -n "$DECODO_API_KEY" ]]; then
+        if [[ "$DECODO_API_KEY" != *:* ]]; then
+            warn "Key doesn't look like user:password format — skipping proxy test."
+            DECODO_API_KEY=""
+        else
+            _decodo_user="${DECODO_API_KEY%%:*}"
+            _decodo_pass="${DECODO_API_KEY#*:}"
+            info "Testing proxy connection via gate.decodo.com:10001 …"
+            _proxy_url="http://${_decodo_user}:${_decodo_pass}@gate.decodo.com:10001"
+            _proxy_ip=$(curl -sf --proxy "$_proxy_url" --max-time 15 \
+                "https://ipinfo.io/ip" 2>/dev/null || true)
+            if [[ -n "$_proxy_ip" ]]; then
+                success "Proxy works! Outbound IP: ${_proxy_ip}"
+            else
+                warn "Could not reach the proxy (timeout or bad credentials)."
+                warn "The key will still be saved — fix it later in .env if needed."
+            fi
+        fi
+    fi
+
+    # ---------------------------------------------------------------
+    # Step 4 of 4 — Ollama model
+    # ---------------------------------------------------------------
+    echo ""
+    echo -e "${BOLD}─── Step 4 of 4: AI Model ─────────────────────────────────${NC}"
     echo ""
     echo "  Validly uses a local Ollama model for reasoning."
     echo "  The model is downloaded automatically on first start."
@@ -244,6 +284,9 @@ DIGEST_HOUR=${DIGEST_HOUR}
 # SearXNG (auto-generated — do not share)
 SEARXNG_SECRET_KEY=${SEARXNG_SECRET_KEY}
 
+# Decodo residential proxy (optional — user:password format)
+DECODO_API_KEY=${DECODO_API_KEY}
+
 # Crawler
 CRAWL_DELAY_SECONDS=120
 SUBREDDIT_STALENESS_DAYS=3
@@ -259,7 +302,6 @@ EOF
         cat > "$ENV_LOCAL" <<'EOF'
 # Optional: fill in to enable the manual subreddit-analysis feature in the UI.
 # Leave blank to run in autonomous-only mode (the crawler + digest will still work).
-DECODO_API_KEY=
 INSFORGE_API_KEY=
 EOF
         success ".env.local written."
