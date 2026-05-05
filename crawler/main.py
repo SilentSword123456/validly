@@ -148,14 +148,13 @@ async def scrape_subreddit(
     """Fetch top-weekly posts from Reddit JSON API, return list of {title, permalink, id}."""
     url = f"https://www.reddit.com/r/{subreddit}/top.json?t=week&limit=10"
     headers = {"User-Agent": "Mozilla/5.0 (compatible; ValidlyBot/1.0)"}
-    proxies = {"https://": DECODO_PROXY} if DECODO_PROXY else None
     try:
         resp = await client.get(
             url,
             headers=headers,
             follow_redirects=True,
             timeout=30.0,
-            **({"proxy": proxies["https://"]} if proxies else {}),
+            **({"proxy": DECODO_PROXY} if DECODO_PROXY else {}),
         )
         resp.raise_for_status()
         data = resp.json()
@@ -187,14 +186,13 @@ async def fetch_comments(
     """Fetch top comments for a Reddit post via JSON API."""
     url = f"https://www.reddit.com{permalink}.json?limit=5"
     headers = {"User-Agent": "Mozilla/5.0 (compatible; ValidlyBot/1.0)"}
-    proxies = {"https://": DECODO_PROXY} if DECODO_PROXY else None
     try:
         resp = await client.get(
             url,
             headers=headers,
             follow_redirects=True,
             timeout=30.0,
-            **({"proxy": proxies["https://"]} if proxies else {}),
+            **({"proxy": DECODO_PROXY} if DECODO_PROXY else {}),
         )
         resp.raise_for_status()
         data = resp.json()
@@ -205,7 +203,7 @@ async def fetch_comments(
     comments: list[str] = []
     seen: set[str] = set()
     # Reddit JSON API returns a two-element list; comments are in the second element
-    comment_listing = data[1] if isinstance(data, list) and len(data) > 1 else {}
+    comment_listing = data[1] if isinstance(data, list) and len(data) > 1 and isinstance(data[1], dict) else {}
     for child in comment_listing.get("data", {}).get("children", []):
         body = child.get("data", {}).get("body", "")
         text = body.strip()[:400]
