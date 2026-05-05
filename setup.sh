@@ -224,8 +224,8 @@ if [[ "$jump_to_start" != "true" ]]; then
         if [[ -n "$DECODO_API_KEY" ]]; then
             _decodo_user="${DECODO_API_KEY%%:*}"
             _decodo_pass="${DECODO_API_KEY#*:}"
-            info "Testing proxy connection via gate.decodo.com:10001 …"
-            _proxy_url="http://${_decodo_user}:${_decodo_pass}@gate.decodo.com:10001"
+            info "Testing proxy connection via gate.decodo.com:10002 …"
+            _proxy_url="http://${_decodo_user}:${_decodo_pass}@gate.decodo.com:10002"
             _proxy_ip=$(curl -sf --proxy "$_proxy_url" --max-time 15 \
                 "https://ipinfo.io/ip" 2>/dev/null || true)
             if [[ -n "$_proxy_ip" ]]; then
