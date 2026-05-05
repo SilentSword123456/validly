@@ -226,7 +226,7 @@ cp .env.example .env
 Key variables to configure:
 
 ```bash
-# Local AI model (pulled automatically on first start)
+# Local AI model (pulled automatically by the crawler on first start)
 OLLAMA_MODEL=qwen2.5:14b
 
 # Telegram bot for the daily idea digest (recommended)
@@ -238,6 +238,12 @@ DISCORD_WEBHOOK_URL=https://discord.com/api/webhooks/YOUR_ID/YOUR_TOKEN
 
 # What hour (UTC, 0-23) to fire the digest
 DIGEST_HOUR=8
+
+# Decodo residential proxy for Reddit scraping (optional — falls back to direct requests)
+# Provide either a single "user:pass" key or both vars separately
+DECODO_API_KEY=your_user:your_pass
+# DECODO_USER=your_user
+# DECODO_PASS=your_pass
 ```
 
 The existing Next.js variables (`DECODO_API_KEY`, `INSFORGE_API_KEY`, etc.) go in `.env.local` — they are only needed for the manual analysis feature in the web UI.
@@ -248,7 +254,7 @@ The existing Next.js variables (`DECODO_API_KEY`, `INSFORGE_API_KEY`, etc.) go i
 docker compose up -d
 ```
 
-That's it. All services start automatically. Ollama pulls the model on first boot (may take a few minutes). The crawler starts scraping once all services are healthy.
+That's it. All services start automatically. The crawler pulls the configured Ollama model on startup (may take a few minutes on first boot). Once all services are healthy, the crawler begins scraping.
 
 ```bash
 docker compose logs -f crawler   # watch the crawler
@@ -355,50 +361,3 @@ This project is open source and available under the [MIT License](LICENSE).
 ---
 
 **Built with ❤️ using Next.js, TypeScript, and AI**
-
-`POST /api/analyze`
-
-Request body:
-
-```json
-{
-	"subreddit": "saas"
-}
-```
-
-Response shape:
-
-```json
-{
-	"subreddit": "saas",
-	"source": {
-		"subreddit": "saas",
-		"scrapedAt": "2026-04-13T00:00:00.000Z",
-		"posts": [
-			{
-				"title": "...",
-				"comments": ["...", "..."],
-				"permalink": "/r/saas/comments/..."
-			}
-		]
-	},
-	"ideas": [
-		{
-			"idea_name": "...",
-			"problem": "...",
-			"demand_level": "High",
-			"existing_solutions": ["..."],
-			"user_complaints": ["..."],
-			"opportunity": "...",
-			"score": 8,
-			"verdict": "Strong"
-		}
-	]
-}
-```
-
-## Notes
-
-- The Decodo integration is intentionally resilient and tries multiple auth and payload conventions because Decodo account setups can differ.
-- Optional Insforge persistence is disabled unless `INSFORGE_RESULTS_TABLE` is set and the target table already exists.
-- The route validates both request input and AI output before returning data to the UI.
