@@ -28,22 +28,11 @@ services:
     environment:
       - OLLAMA_KEEP_ALIVE=24h
     healthcheck:
-      test: ["CMD-SHELL", "curl -sf http://localhost:11434/api/tags || exit 1"]
+      test: ["CMD-SHELL", "ollama list > /dev/null 2>&1 || exit 1"]
       interval: 15s
       timeout: 10s
       retries: 10
-      start_period: 60s
-    entrypoint: ["/bin/sh", "-c"]
-    command:
-      - |
-        ollama serve &
-        SERVE_PID=$$!
-        echo "Waiting for Ollama to start..."
-        until curl -sf http://localhost:11434/api/tags > /dev/null 2>&1; do sleep 2; done
-        echo "Pulling model ${OLLAMA_MODEL:-qwen2.5:14b}..."
-        ollama pull ${OLLAMA_MODEL:-qwen2.5:14b}
-        echo "Model ready."
-        wait $$SERVE_PID
+      start_period: 30s
 
   searxng:
     image: searxng/searxng:latest

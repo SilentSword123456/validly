@@ -4,7 +4,7 @@ Validly Autonomous Crawler Agent
 Continuous loop that:
 1. Reads its mission & memory from Postgres (agent_runs context_summary)
 2. Asks Ollama which subreddit to visit next
-3. Scrapes Reddit via old.reddit.com (plain HTTP, no Decodo dependency)
+3. Scrapes Reddit via Decodo residential proxy + Reddit JSON API (falls back to direct)
 4. Finds pain points → searches SearXNG for competitors
 5. Asks Ollama to reason about each pain point → store/merge idea in DB
 6. Generates Ollama embeddings → uses pgvector cosine similarity to deduplicate
@@ -49,6 +49,19 @@ CRAWL_DELAY: int = int(os.environ.get("CRAWL_DELAY_SECONDS", "120"))
 STALENESS_DAYS: int = int(os.environ.get("SUBREDDIT_STALENESS_DAYS", "3"))
 MAX_IDEAS: int = int(os.environ.get("MAX_IDEAS_IN_DB", "500"))
 DIGEST_HOUR: int = int(os.environ.get("DIGEST_HOUR", "8"))
+
+# Decodo residential proxy credentials (optional — falls back to direct requests)
+_decodo_api_key = os.environ.get("DECODO_API_KEY", "")
+if _decodo_api_key and ":" in _decodo_api_key:
+    _decodo_user, _decodo_pass = _decodo_api_key.split(":", 1)
+else:
+    _decodo_user = os.environ.get("DECODO_USER", _decodo_api_key)
+    _decodo_pass = os.environ.get("DECODO_PASS", "")
+DECODO_PROXY: str | None = (
+    f"http://{_decodo_user}:{_decodo_pass}@gate.decodo.com:10001"
+    if _decodo_user and _decodo_pass
+    else None
+)
 
 # Context window budget (rough token estimate before summarising)
 CONTEXT_TOKEN_BUDGET = 6000
@@ -132,31 +145,35 @@ async def ollama_embed(client: httpx.AsyncClient, text: str) -> list[float] | No
 async def scrape_subreddit(
     client: httpx.AsyncClient, subreddit: str
 ) -> list[dict[str, str]]:
-    """Fetch top-weekly posts from old.reddit.com, return list of {title, permalink}."""
-    url = f"https://old.reddit.com/r/{subreddit}/top/?t=week"
+    """Fetch top-weekly posts from Reddit JSON API, return list of {title, permalink, id}."""
+    url = f"https://www.reddit.com/r/{subreddit}/top.json?t=week&limit=10"
     headers = {"User-Agent": "Mozilla/5.0 (compatible; ValidlyBot/1.0)"}
+    proxies = {"https://": DECODO_PROXY} if DECODO_PROXY else None
     try:
-        resp = await client.get(url, headers=headers, follow_redirects=True, timeout=30.0)
+        resp = await client.get(
+            url,
+            headers=headers,
+            follow_redirects=True,
+            timeout=30.0,
+            **({"proxy": proxies["https://"]} if proxies else {}),
+        )
         resp.raise_for_status()
-        html = resp.text
+        data = resp.json()
     except Exception as exc:  # noqa: BLE001
         log.warning("Reddit scrape failed for r/%s: %s", subreddit, exc)
         return []
 
-    soup = BeautifulSoup(html, "lxml")
     posts: list[dict[str, str]] = []
     seen: set[str] = set()
-
-    for thing in soup.select(".thing"):
-        title_el = thing.select_one("a.title")
-        if not title_el:
-            continue
-        title = title_el.get_text(strip=True)
-        permalink = thing.get("data-permalink", "")
-        if not permalink or permalink in seen:
+    for child in data.get("data", {}).get("children", []):
+        post = child.get("data", {})
+        permalink = post.get("permalink", "")
+        post_id = post.get("id", "")
+        title = post.get("title", "")
+        if not permalink or permalink in seen or not title:
             continue
         seen.add(permalink)
-        posts.append({"title": title, "permalink": permalink})
+        posts.append({"title": title, "permalink": permalink, "id": post_id})
         if len(posts) >= 8:
             break
 
@@ -167,22 +184,31 @@ async def scrape_subreddit(
 async def fetch_comments(
     client: httpx.AsyncClient, permalink: str
 ) -> list[str]:
-    """Fetch top comments for a Reddit post."""
-    url = f"https://old.reddit.com{permalink}"
+    """Fetch top comments for a Reddit post via JSON API."""
+    url = f"https://www.reddit.com{permalink}.json?limit=5"
     headers = {"User-Agent": "Mozilla/5.0 (compatible; ValidlyBot/1.0)"}
+    proxies = {"https://": DECODO_PROXY} if DECODO_PROXY else None
     try:
-        resp = await client.get(url, headers=headers, follow_redirects=True, timeout=30.0)
+        resp = await client.get(
+            url,
+            headers=headers,
+            follow_redirects=True,
+            timeout=30.0,
+            **({"proxy": proxies["https://"]} if proxies else {}),
+        )
         resp.raise_for_status()
+        data = resp.json()
     except Exception as exc:  # noqa: BLE001
         log.warning("Comment fetch failed for %s: %s", permalink, exc)
         return []
 
-    soup = BeautifulSoup(resp.text, "lxml")
     comments: list[str] = []
     seen: set[str] = set()
-
-    for el in soup.select(".comment .md, .usertext-body .md"):
-        text = el.get_text(" ", strip=True)[:400]
+    # Reddit JSON API returns a two-element list; comments are in the second element
+    comment_listing = data[1] if isinstance(data, list) and len(data) > 1 else {}
+    for child in comment_listing.get("data", {}).get("children", []):
+        body = child.get("data", {}).get("body", "")
+        text = body.strip()[:400]
         if len(text) < 20 or text in seen:
             continue
         seen.add(text)

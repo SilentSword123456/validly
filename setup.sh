@@ -290,6 +290,12 @@ if [[ ! "$START_NOW" =~ ^[Nn]$ ]]; then
     docker compose up -d --build
 
     echo ""
+    info "Pulling Ollama model $OLLAMA_MODEL (this may take a few minutes)..."
+    until docker exec validly-ollama-1 ollama list > /dev/null 2>&1; do sleep 2; done
+    docker exec validly-ollama-1 ollama pull "$OLLAMA_MODEL"
+    success "Model ready."
+
+    echo ""
     success "Stack is starting up in the background."
     echo ""
     echo "  Useful commands:"
