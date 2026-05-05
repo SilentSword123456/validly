@@ -58,7 +58,7 @@ else:
     _decodo_user = os.environ.get("DECODO_USER", _decodo_api_key)
     _decodo_pass = os.environ.get("DECODO_PASS", "")
 DECODO_PROXY: str | None = (
-    f"http://{_decodo_user}:{_decodo_pass}@gate.decodo.com:10001"
+    f"http://{_decodo_user}:{_decodo_pass}@gate.decodo.com:10002"
     if _decodo_user and _decodo_pass
     else None
 )
@@ -754,7 +754,8 @@ async def pre_reason_top_candidates(
 
 async def run_once(
     pool: asyncpg.Pool,
-    client: httpx.AsyncClient,
+    internal_client: httpx.AsyncClient,
+    external_client: httpx.AsyncClient,
     context_actions: list[dict],
     context_tokens: list[int],
     run_id: int,
@@ -771,7 +772,7 @@ async def run_once(
         return
 
     # --- Decide which subreddit to visit ---
-    subreddit = await decide_next_subreddit(client, queue, memory, recent_ideas)
+    subreddit = await decide_next_subreddit(internal_client, queue, memory, recent_ideas)
     log.info("Selected subreddit: r/%s", subreddit)
 
     # --- Check staleness ---
@@ -782,7 +783,7 @@ async def run_once(
         return
 
     # --- Scrape posts ---
-    posts = await scrape_subreddit(client, subreddit)
+    posts = await scrape_subreddit(external_client, subreddit)
     if not posts:
         log.warning("No posts scraped from r/%s", subreddit)
         return
@@ -792,7 +793,7 @@ async def run_once(
 
     async def fetch_with_sem(post: dict) -> dict:
         async with sem:
-            post["comments"] = await fetch_comments(client, post["permalink"])
+            post["comments"] = await fetch_comments(external_client, post["permalink"])
             return post
 
     posts = list(await asyncio.gather(*[fetch_with_sem(p) for p in posts]))
@@ -805,12 +806,12 @@ async def run_once(
     await update_subreddit_scraped(pool, subreddit)
 
     # Discover mentioned subreddits and add to queue
-    mentioned = await extract_mentioned_subreddits(client, posts)
+    mentioned = await extract_mentioned_subreddits(internal_client, posts)
     for sub in mentioned[:5]:
         await maybe_add_subreddit(pool, sub)
 
     # --- Extract pain points ---
-    pain_points = await extract_pain_points(client, posts)
+    pain_points = await extract_pain_points(internal_client, posts)
     log.info("Extracted %d pain points from r/%s", len(pain_points), subreddit)
 
     ideas_stored = 0
@@ -823,20 +824,20 @@ async def run_once(
             continue
 
         # --- Search for existing solutions ---
-        search_results = await searxng_search(client, search_query)
+        search_results = await searxng_search(external_client, search_query)
 
         # Fetch top result page
         page_texts: list[str] = []
         if search_results:
             top_url = search_results[0].get("url", "")
             if top_url:
-                page_text = await fetch_page_text(client, top_url)
+                page_text = await fetch_page_text(external_client, top_url)
                 if page_text:
                     page_texts.append(page_text)
 
         # --- Reason about idea ---
         idea = await reason_about_idea(
-            client, pain_text, search_results, page_texts, subreddit, posts
+            internal_client, pain_text, search_results, page_texts, subreddit, posts
         )
         if not idea:
             continue
@@ -852,7 +853,7 @@ async def run_once(
 
         # --- Generate embedding ---
         embed_text = f"{idea['name']} {idea['problem']} {idea['opportunity']}"
-        embedding = await ollama_embed(client, embed_text)
+        embedding = await ollama_embed(internal_client, embed_text)
         idea["embedding"] = embedding
 
         # --- Deduplicate via pgvector ---
@@ -914,10 +915,9 @@ async def main() -> None:
     log.info("Crawler agent starting…")
     pool = await get_pool()
 
-    async with httpx.AsyncClient(
-        **({"proxy": DECODO_PROXY} if DECODO_PROXY else {})
-    ) as client:
-        await ollama_ensure_model(client)
+    async with httpx.AsyncClient() as internal_client, \
+               httpx.AsyncClient(**({"proxy": DECODO_PROXY} if DECODO_PROXY else {})) as external_client:
+        await ollama_ensure_model(internal_client)
         context_actions: list[dict] = []
         context_tokens: list[int] = [0]
         run_id = await log_run_start(pool)
@@ -941,7 +941,7 @@ async def main() -> None:
                         or last_prereason_date.date() < now.date()
                     )
                 ):
-                    await pre_reason_top_candidates(pool, client)
+                    await pre_reason_top_candidates(pool, internal_client)
                     last_prereason_date = now
 
                 # --- Context window management ---
@@ -950,7 +950,7 @@ async def main() -> None:
                         "Context budget exceeded (%d tokens), summarising…",
                         context_tokens[0],
                     )
-                    summary = await summarise_context(client, context_actions)
+                    summary = await summarise_context(internal_client, context_actions)
                     await log_run_end(pool, run_id, context_actions, summary)
                     # Restart fresh
                     context_actions = []
@@ -959,7 +959,7 @@ async def main() -> None:
                     log.info("Context reset. New run_id=%d", run_id)
 
                 # --- One crawl cycle ---
-                await run_once(pool, client, context_actions, context_tokens, run_id)
+                await run_once(pool, internal_client, external_client, context_actions, context_tokens, run_id)
 
             except Exception as exc:  # noqa: BLE001
                 log.error("Unhandled error in crawl cycle: %s", exc, exc_info=True)
