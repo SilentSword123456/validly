@@ -212,7 +212,7 @@ if [[ "$jump_to_start" != "true" ]]; then
     if [[ -n "$DECODO_API_KEY" ]]; then
         if [[ "$DECODO_API_KEY" != *:* ]]; then
             # Try to base64-decode — Decodo sometimes gives a single base64 string
-            _decoded=$(echo "$DECODO_API_KEY" | base64 --decode 2>/dev/null || true)
+            _decoded=$(base64 --decode <<< "$DECODO_API_KEY" 2>/dev/null || true)
             if [[ "$_decoded" == *:* ]]; then
                 info "Detected base64-encoded key — decoded to user:password format."
                 DECODO_API_KEY="$_decoded"
