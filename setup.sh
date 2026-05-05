@@ -200,18 +200,28 @@ if [[ "$jump_to_start" != "true" ]]; then
     echo "  Reddit and other sites don't block your server."
     echo "  Sign up (free trial available) at https://decodo.com"
     echo ""
-    echo "  Paste your key in  user:password  format"
+    echo "  Paste your key in  user:password  format, or as the base64 string"
+    echo "  Decodo provides (it will be decoded automatically)."
     echo "  e.g.  spuser1abc123:MySecret456"
+    echo "  e.g.  VTAwMDA0MDUzMTI6UFdfMTMwNjNiNjljMmVkNDEwNTI3ZmNhNmYwM2MzMmFiMWY5"
     echo ""
-    prompt "Decodo API key (user:password) — or press Enter to skip:"
+    prompt "Decodo API key — or press Enter to skip:"
     read -r DECODO_API_KEY_INPUT
     DECODO_API_KEY="${DECODO_API_KEY_INPUT// /}"   # strip spaces
 
     if [[ -n "$DECODO_API_KEY" ]]; then
         if [[ "$DECODO_API_KEY" != *:* ]]; then
-            warn "Key doesn't look like user:password format — skipping proxy test."
-            DECODO_API_KEY=""
-        else
+            # Try to base64-decode — Decodo sometimes gives a single base64 string
+            _decoded=$(base64 --decode <<< "$DECODO_API_KEY" 2>/dev/null || true)
+            if [[ "$_decoded" == *:* ]]; then
+                info "Detected base64-encoded key — decoded to user:password format."
+                DECODO_API_KEY="$_decoded"
+            else
+                warn "Key doesn't look like user:password format and couldn't be base64-decoded — skipping proxy test."
+                DECODO_API_KEY=""
+            fi
+        fi
+        if [[ -n "$DECODO_API_KEY" ]]; then
             _decodo_user="${DECODO_API_KEY%%:*}"
             _decodo_pass="${DECODO_API_KEY#*:}"
             info "Testing proxy connection via gate.decodo.com:10001 …"
