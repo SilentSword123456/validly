@@ -138,6 +138,27 @@ async def ollama_embed(client: httpx.AsyncClient, text: str) -> list[float] | No
         return None
 
 
+async def ollama_ensure_model(client: httpx.AsyncClient) -> None:
+    """Pull the configured Ollama model if it is not already present."""
+    log.info("Ensuring Ollama model %s is available…", OLLAMA_MODEL)
+    while True:
+        try:
+            resp = await client.post(
+                f"{OLLAMA_URL}/api/pull",
+                json={"name": OLLAMA_MODEL, "stream": False},
+                timeout=600.0,
+            )
+            resp.raise_for_status()
+            log.info("Ollama model %s ready.", OLLAMA_MODEL)
+            return
+        except (httpx.ConnectError, httpx.TimeoutException, httpx.RemoteProtocolError) as exc:
+            log.warning("Ollama not reachable yet (%s), retrying in 15 s…", exc)
+            await asyncio.sleep(15)
+        except Exception as exc:  # noqa: BLE001
+            log.error("Failed to pull Ollama model: %s — retrying in 30 s", exc)
+            await asyncio.sleep(30)
+
+
 # ---------------------------------------------------------------------------
 # Helpers — Reddit scraping (no external API, plain HTTP)
 # ---------------------------------------------------------------------------
@@ -154,7 +175,6 @@ async def scrape_subreddit(
             headers=headers,
             follow_redirects=True,
             timeout=30.0,
-            **({"proxy": DECODO_PROXY} if DECODO_PROXY else {}),
         )
         resp.raise_for_status()
         data = resp.json()
@@ -192,7 +212,6 @@ async def fetch_comments(
             headers=headers,
             follow_redirects=True,
             timeout=30.0,
-            **({"proxy": DECODO_PROXY} if DECODO_PROXY else {}),
         )
         resp.raise_for_status()
         data = resp.json()
@@ -895,7 +914,10 @@ async def main() -> None:
     log.info("Crawler agent starting…")
     pool = await get_pool()
 
-    async with httpx.AsyncClient() as client:
+    async with httpx.AsyncClient(
+        **({"proxy": DECODO_PROXY} if DECODO_PROXY else {})
+    ) as client:
+        await ollama_ensure_model(client)
         context_actions: list[dict] = []
         context_tokens: list[int] = [0]
         run_id = await log_run_start(pool)
