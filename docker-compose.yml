@@ -45,7 +45,7 @@ services:
     volumes:
       - ./searxng:/etc/searxng
     healthcheck:
-      test: ["CMD-SHELL", "curl -sf http://localhost:8080/healthz || curl -sf http://localhost:8080/ || exit 1"]
+      test: ["CMD-SHELL", "curl -sf http://[::1]:8080/ || exit 1"]
       interval: 15s
       timeout: 10s
       retries: 5

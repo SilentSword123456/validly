@@ -33,7 +33,7 @@ engines:
   # Disable engines that fail to initialize in the current SearXNG release
   - name: ahmia
     engine: ahmia
-    disabled: true
+    inactive: true
   - name: wikidata
     engine: wikidata
-    disabled: true
+    inactive: true
