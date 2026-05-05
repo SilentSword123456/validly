@@ -59,9 +59,10 @@ echo "  ────────────────────────
 echo ""
 echo "  This script will:"
 echo "    1. Help you create a Telegram bot for daily digests"
-echo "    2. Optionally configure a Decodo residential proxy"
-echo "    3. Create your .env configuration file"
-echo "    4. (Optional) Start the stack with Docker Compose"
+echo "    2. Optionally configure a Webshare static proxy"
+echo "    3. Optionally configure a Decodo residential proxy"
+echo "    4. Create your .env configuration file"
+echo "    5. (Optional) Start the stack with Docker Compose"
 echo ""
 echo "  No external API keys are required for autonomous mode."
 echo "  All AI runs locally via Ollama."
@@ -99,11 +100,12 @@ TELEGRAM_BOT_TOKEN=""
 TELEGRAM_CHAT_ID=""
 DISCORD_WEBHOOK_URL=""
 DECODO_API_KEY=""
+WEBSHARE_PROXY_URL=""
 
 if [[ "$jump_to_start" != "true" ]]; then
 
     echo ""
-    echo -e "${BOLD}─── Step 1 of 4: Telegram Bot ────────────────────────────${NC}"
+    echo -e "${BOLD}─── Step 1 of 5: Telegram Bot ────────────────────────────${NC}"
     echo ""
     echo "  A Telegram bot sends you the daily best SaaS idea."
     echo "  It only takes ~60 seconds to create one."
@@ -181,7 +183,7 @@ if [[ "$jump_to_start" != "true" ]]; then
     # Step 3 — Discord webhook (optional)
     # ---------------------------------------------------------------
     echo ""
-    echo -e "${BOLD}─── Step 2 of 4: Discord Webhook (optional) ──────────────${NC}"
+    echo -e "${BOLD}─── Step 2 of 5: Discord Webhook (optional) ──────────────${NC}"
     echo ""
     echo "  You can also send digests to a Discord channel."
     echo "  Skip this if you're using Telegram."
@@ -191,10 +193,45 @@ if [[ "$jump_to_start" != "true" ]]; then
     DISCORD_WEBHOOK_URL="${DISCORD_WEBHOOK_URL// /}"
 
     # ---------------------------------------------------------------
-    # Step 3 of 4 — Decodo residential proxy (optional)
+    # Step 3 of 5 — Webshare static proxy (optional)
     # ---------------------------------------------------------------
     echo ""
-    echo -e "${BOLD}─── Step 3 of 4: Decodo Residential Proxy (optional) ─────${NC}"
+    echo -e "${BOLD}─── Step 3 of 5: Webshare Proxy (optional) ───────────────${NC}"
+    echo ""
+    echo "  Webshare free static proxies work well for this project."
+    echo "  Sign up for a free account at https://webshare.io"
+    echo ""
+    echo "  In the Webshare dashboard, copy a proxy line and paste it here"
+    echo "  in  ip:port:username:password  format, e.g.:"
+    echo "    31.59.20.176:6754:vzejosed:t8pmijt0bza0"
+    echo ""
+    prompt "Paste your Webshare proxy (or press Enter to skip):"
+    read -r _ws_input
+    _ws_input="${_ws_input// /}"   # strip spaces
+
+    if [[ -n "$_ws_input" ]]; then
+        IFS=':' read -r _ws_ip _ws_port _ws_user _ws_pass <<< "$_ws_input"
+        if [[ -n "$_ws_ip" && -n "$_ws_port" && -n "$_ws_user" && -n "$_ws_pass" ]]; then
+            WEBSHARE_PROXY_URL="http://${_ws_user}:${_ws_pass}@${_ws_ip}:${_ws_port}"
+            info "Testing Webshare proxy…"
+            _ws_ip_out=$(curl -sf --proxy "$WEBSHARE_PROXY_URL" --max-time 15 \
+                "https://ipinfo.io/ip" 2>/dev/null || true)
+            if [[ -n "$_ws_ip_out" ]]; then
+                success "Proxy works! Outbound IP: ${_ws_ip_out}"
+            else
+                warn "Could not reach the proxy (timeout or bad credentials)."
+                warn "The URL will still be saved — fix it later in .env if needed."
+            fi
+        else
+            warn "Could not parse proxy — expected ip:port:username:password format. Skipping."
+        fi
+    fi
+
+    # ---------------------------------------------------------------
+    # Step 4 of 5 — Decodo residential proxy (optional)
+    # ---------------------------------------------------------------
+    echo ""
+    echo -e "${BOLD}─── Step 4 of 5: Decodo Residential Proxy (optional) ─────${NC}"
     echo ""
     echo "  Decodo routes crawler requests through residential IPs so"
     echo "  Reddit and other sites don't block your server."
@@ -238,10 +275,10 @@ if [[ "$jump_to_start" != "true" ]]; then
     fi
 
     # ---------------------------------------------------------------
-    # Step 4 of 4 — Ollama model
+    # Step 5 of 5 — Ollama model
     # ---------------------------------------------------------------
     echo ""
-    echo -e "${BOLD}─── Step 4 of 4: AI Model ─────────────────────────────────${NC}"
+    echo -e "${BOLD}─── Step 5 of 5: AI Model ─────────────────────────────────${NC}"
     echo ""
     echo "  Validly uses a local Ollama model for reasoning."
     echo "  The model is downloaded automatically on first start."
@@ -296,6 +333,9 @@ SEARXNG_SECRET_KEY=${SEARXNG_SECRET_KEY}
 
 # Decodo residential proxy (optional — user:password format)
 DECODO_API_KEY=${DECODO_API_KEY}
+
+# Webshare static proxy (optional — http://user:pass@ip:port format)
+WEBSHARE_PROXY_URL=${WEBSHARE_PROXY_URL}
 
 # Crawler
 CRAWL_DELAY_SECONDS=120

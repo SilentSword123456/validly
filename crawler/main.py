@@ -57,11 +57,15 @@ if _decodo_api_key and ":" in _decodo_api_key:
 else:
     _decodo_user = os.environ.get("DECODO_USER", _decodo_api_key)
     _decodo_pass = os.environ.get("DECODO_PASS", "")
-DECODO_PROXY: str | None = (
-    f"http://{_decodo_user}:{_decodo_pass}@gate.decodo.com:10002"
-    if _decodo_user and _decodo_pass
-    else None
-)
+_webshare_proxy = os.environ.get("WEBSHARE_PROXY_URL", "")
+if _webshare_proxy:
+    DECODO_PROXY: str | None = _webshare_proxy
+else:
+    DECODO_PROXY = (
+        f"http://{_decodo_user}:{_decodo_pass}@gate.decodo.com:10002"
+        if _decodo_user and _decodo_pass
+        else None
+    )
 
 # Context window budget (rough token estimate before summarising)
 CONTEXT_TOKEN_BUDGET = 6000
