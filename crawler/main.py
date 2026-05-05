@@ -824,7 +824,7 @@ async def run_once(
             continue
 
         # --- Search for existing solutions ---
-        search_results = await searxng_search(external_client, search_query)
+        search_results = await searxng_search(internal_client, search_query)
 
         # Fetch top result page
         page_texts: list[str] = []
