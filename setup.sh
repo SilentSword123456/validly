@@ -209,7 +209,7 @@ if [[ "$jump_to_start" != "true" ]]; then
 
     if [[ -n "$DECODO_API_KEY" ]]; then
         if [[ "$DECODO_API_KEY" != *:* ]]; then
-            warn "Key doesn't look like  user:password  format — skipping proxy test."
+            warn "Key doesn't look like user:password format — skipping proxy test."
             DECODO_API_KEY=""
         else
             _decodo_user="${DECODO_API_KEY%%:*}"

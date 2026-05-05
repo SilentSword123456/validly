@@ -30,7 +30,7 @@ ui:
   default_theme: simple
 
 engines:
-  # Disable engines that fail to initialise in the current SearXNG release
+  # Disable engines that fail to initialize in the current SearXNG release
   - name: ahmia
     engine: ahmia
     disabled: true
